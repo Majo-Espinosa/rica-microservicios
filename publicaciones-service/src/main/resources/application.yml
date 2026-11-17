@@ -1,0 +1,10 @@
+server:
+  port: 8081
+
+spring:
+  application:
+    name: publicaciones-service
+  # En Spring Boot 4 la propiedad es spring.mongodb.uri
+  # (spring.data.mongodb.uri se ignora y la app usaria la base "test").
+  mongodb:
+    uri: mongodb://localhost:27017/rica

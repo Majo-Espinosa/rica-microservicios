@@ -1,0 +1,23 @@
+meta {
+  name: Crear publicación (correo INVENTADO)
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{publicacionesUrl}}/api/publicaciones
+  body: json
+}
+
+headers {
+  content-type: application/json
+}
+
+body:json {
+  {
+    "investigadorCorreo": "INVENTADO@uptc.edu.co",
+    "titulo": "Publicación de un investigador que no existe",
+    "tipo": "libro",
+    "anio": 2025
+  }
+}

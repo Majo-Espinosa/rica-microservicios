@@ -1,0 +1,26 @@
+meta {
+  name: Crear publicación
+  type: http
+  seq: 3
+}
+
+post {
+  url: {{publicacionesUrl}}/api/publicaciones
+  body: json
+}
+
+headers {
+  content-type: application/json
+}
+
+body:json {
+  {
+    "investigadorCorreo": "ana.torres@uptc.edu.co",
+    "titulo": "Arquitecturas evolutivas",
+    "tipo": "articulo",
+    "anio": 2025,
+    "detalles": {
+      "revista": "Revista Ingeniería UPTC"
+    }
+  }
+}

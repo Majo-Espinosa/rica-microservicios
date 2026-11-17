@@ -1,0 +1,30 @@
+package com.rica.investigadoresservice.investigadores.aplicacion;
+
+import com.rica.investigadoresservice.investigadores.dominio.CorreoDuplicadoException;
+import com.rica.investigadoresservice.investigadores.dominio.CorreoInstitucional;
+import com.rica.investigadoresservice.investigadores.dominio.Investigador;
+import org.springframework.stereotype.Component;
+
+/**
+ * Crea investigadores validos: el correo debe tener formato correcto (lo garantiza
+ * el Value Object) y no puede estar registrado previamente.
+ */
+@Component
+public class InvestigadorFactory {
+
+    private final RepositorioInvestigadores repositorioInvestigadores;
+
+    public InvestigadorFactory(RepositorioInvestigadores repositorioInvestigadores) {
+        this.repositorioInvestigadores = repositorioInvestigadores;
+    }
+
+    public Investigador crear(String nombreCompleto, String correoInstitucional, String grupoInvestigacion) {
+        CorreoInstitucional correo = new CorreoInstitucional(correoInstitucional);
+        if (repositorioInvestigadores.existeCorreo(correo.valor())) {
+            throw new CorreoDuplicadoException(
+                    "Ya existe un investigador registrado con el correo " + correo.valor());
+        }
+        return new Investigador(null, nombreCompleto, correo, grupoInvestigacion);
+    }
+
+}
