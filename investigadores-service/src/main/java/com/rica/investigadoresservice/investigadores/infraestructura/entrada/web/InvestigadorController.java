@@ -43,4 +43,11 @@ public class InvestigadorController {
                 .body(InvestigadorMapper.aResponse(guardado));
     }
 
+    /** 202 Accepted (no 204): la eliminacion es una Saga asincrona que aun no termina. */
+    @DeleteMapping("/{id}")
+    public ResponseEntity<Void> eliminar(@PathVariable Long id) {
+        investigadorService.iniciarEliminacion(id);
+        return ResponseEntity.accepted().build();
+    }
+
 }
