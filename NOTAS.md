@@ -104,3 +104,36 @@ sería un temporizador que, tras un plazo sin confirmación, regrese el estado a
   → `Saga: publicaciones confirmó para ... Eliminando investigador.`
 - Con Kafka apagado el registro responde 201 igual; el evento queda con `publicado = f` y se publica al volver Kafka.
 - Con investigadores-service apagado: 503 `UNAVAILABLE` y, tras 5 llamadas, `CLOSED to OPEN` y 503 inmediato (circuito abierto).
+
+## Taller Lección 8 — CQRS: consultas-service
+
+### Plan
+
+| Servicio | Lado | Qué hace |
+|---|---|---|
+| investigadores-service | Escritura | Publica `investigadores.registrados`, `investigadores.en-eliminacion` y ahora `investigadores.eliminados` |
+| publicaciones-service | Escritura | Publica `publicaciones.registradas` |
+| consultas-service (8083) | Lectura | Escucha los cuatro eventos y mantiene una ficha por investigador en su propia base `rica_consultas`. Solo responde GET |
+
+### Qué se observó al probarlo
+
+- Una sola consulta (`GET /api/consultas/investigadores/{correo}`) devuelve el investigador con sus
+  publicaciones sin llamar a ningún otro servicio.
+- **Lectura caída, escritura intacta:** con consultas-service detenido, registrar una publicación sigue
+  respondiendo 201; al volver, el consumidor procesa el evento pendiente y el total sube solo.
+  Si el servicio se mata a la fuerza, Kafka espera a que venza la sesión del consumidor anterior
+  (unos 45 s) antes de reasignar la partición: la ficha se actualiza con ese retraso.
+- **La Saga limpia la ficha:** tras el DELETE, la ficha pasa a `EN_ELIMINACION` y luego desaparece (404).
+- **Reconstrucción:** al borrar la colección y arrancar con un `group-id` nuevo, las fichas reaparecen.
+  En la prueba, la ficha de un investigador eliminado **resucitó** en estado `EN_ELIMINACION`: al reproducir,
+  `investigadores.eliminados` se procesó antes que el último `publicaciones.registradas`. Kafka no
+  garantiza orden entre tópicos distintos; en producción se evita publicando todos los eventos de un
+  agregado en un solo tópico, con número de versión.
+
+### Qué se vería distinto si lectura y escritura fueran el mismo modelo
+
+1. Ficha con dos publicaciones: haría falta un JOIN entre servicios (o una llamada a cada uno) en cada consulta.
+2. Ranking: se calcularía en cada petición contando publicaciones, en vez de leer un campo ya guardado.
+3. Log de proyección: no existiría; no habría consistencia eventual, pero tampoco aislamiento entre cargas.
+4. Ficha eliminada → 404: se borraría en la misma transacción, sin estado intermedio observable.
+5. Reconstrucción: imposible; el modelo sería la fuente de verdad y no podría tirarse y rehacerse.
