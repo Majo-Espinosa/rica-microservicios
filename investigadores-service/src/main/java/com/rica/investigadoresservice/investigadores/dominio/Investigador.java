@@ -3,6 +3,8 @@ package com.rica.investigadoresservice.investigadores.dominio;
 import jakarta.persistence.Column;
 import jakarta.persistence.Embedded;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -24,6 +26,10 @@ public class Investigador {
 
     @Column(name = "grupo_investigacion", length = 150)
     private String grupoInvestigacion;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 20)
+    private EstadoInvestigador estado = EstadoInvestigador.ACTIVO;
 
     protected Investigador() {
         // requerido por JPA
@@ -51,6 +57,18 @@ public class Investigador {
 
     public String getGrupoInvestigacion() {
         return grupoInvestigacion;
+    }
+
+    public EstadoInvestigador getEstado() {
+        return estado;
+    }
+
+    public boolean estaEnEliminacion() {
+        return estado == EstadoInvestigador.EN_ELIMINACION;
+    }
+
+    public void marcarEnEliminacion() {
+        this.estado = EstadoInvestigador.EN_ELIMINACION;
     }
 
 }

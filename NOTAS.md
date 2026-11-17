@@ -57,3 +57,50 @@ docker compose up -d
 
 Antes de empezar, detén el stack Docker de rica-api (`docker compose down` en rica-api): usa los
 mismos puertos 5432 y 27017.
+
+## Taller Lección 6 — Comunicación entre servicios
+
+### Paso 1. Plan de comunicación
+
+| Necesidad | Patrón | Dónde |
+|---|---|---|
+| Confirmar que un investigador existe antes de registrar una publicación | RPI síncrono — gRPC | Paso 2 |
+| No caer en cascada si investigadores-service está lento o caído | Circuit Breaker (Resilience4j) | Paso 3 |
+| Que ningún servicio dependa de una dirección de red fija | Service Registry (Eureka) | Paso 4 |
+| Un único punto de entrada para el frontend | API Gateway | Paso 5 |
+| Notificar que se registró un investigador, sin acoplar publicador y oyentes | Domain Event + Transactional Outbox (Kafka) | Paso 6 |
+| Eliminar un investigador y marcar sus publicaciones, sin transacción distribuida | Saga (coreografía) | Paso 7 |
+
+### Puertos
+
+| Componente | Puerto |
+|---|---|
+| eureka-server | 8761 |
+| gateway | 8000 |
+| investigadores-service | 8080 (REST), 9090 (gRPC) |
+| publicaciones-service | 8081 |
+| Kafka (`rica-kafka`) | 9092 |
+
+### Limitación documentada: la dirección gRPC sigue fija
+
+Eureka resuelve el descubrimiento para las llamadas HTTP balanceadas (`lb://` en el Gateway), pero el
+canal gRPC de publicaciones-service sigue apuntando a `static://localhost:9090`. Integrar Eureka con el
+balanceo de canales gRPC es posible, pero añade complejidad fuera del alcance del taller.
+
+### Dónde estaría la compensación de la Saga
+
+Si publicaciones-service está caído, el evento `investigadores.en-eliminacion` espera en Kafka y la Saga
+continúa sola cuando el servicio vuelve. Pero ante un error permanente, el investigador queda
+indefinidamente `EN_ELIMINACION`: nunca desaparece a medias, pero tampoco se recupera. La compensación
+sería un temporizador que, tras un plazo sin confirmación, regrese el estado a `ACTIVO`.
+
+### Verificación de punta a punta (Paso 8)
+
+- `POST /api/investigadores` por el Gateway → 201; Eureka lista GATEWAY, INVESTIGADORES-SERVICE y PUBLICACIONES-SERVICE.
+- En el log de publicaciones-service: `Evento recibido [investigadores.registrados]: {...}`.
+- `POST /api/publicaciones` con correo existente → 201 (verificado por gRPC); con correo INVENTADO → 404.
+- `DELETE /api/investigadores/{id}` → 202, y en los logs:
+  `Evento N publicado en investigadores.en-eliminacion` → `Saga: 1 publicaciones de ... marcadas como huérfanas`
+  → `Saga: publicaciones confirmó para ... Eliminando investigador.`
+- Con Kafka apagado el registro responde 201 igual; el evento queda con `publicado = f` y se publica al volver Kafka.
+- Con investigadores-service apagado: 503 `UNAVAILABLE` y, tras 5 llamadas, `CLOSED to OPEN` y 503 inmediato (circuito abierto).

@@ -19,4 +19,8 @@ public interface RepositorioInvestigadores {
 
     Investigador guardar(Investigador investigador);
 
+    Optional<Investigador> buscarPorCorreo(String correoInstitucional);
+
+    void eliminar(Investigador investigador);
+
 }
