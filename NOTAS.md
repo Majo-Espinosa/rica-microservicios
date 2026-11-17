@@ -137,3 +137,50 @@ sería un temporizador que, tras un plazo sin confirmación, regrese el estado a
 3. Log de proyección: no existiría; no habría consistencia eventual, pero tampoco aislamiento entre cargas.
 4. Ficha eliminada → 404: se borraría en la misma transacción, sin estado intermedio observable.
 5. Reconstrucción: imposible; el modelo sería la fuente de verdad y no podría tirarse y rehacerse.
+
+## Taller Lección 9 — Consumidores robustos (EDA)
+
+### Plan: tres modos de falla
+
+| Falla | Cómo se provoca | Defensa |
+|---|---|---|
+| Mensaje venenoso | Publicar texto que no es JSON | Error no reintentable → Dead Letter Topic |
+| Falla transitoria | (teoría) la base no responde un momento | Reintentos con backoff exponencial (1 s, 2 s, 4 s) |
+| Duplicado | Reiniciar la lectura del tópico desde el principio | Consumidor idempotente |
+
+### Nota técnica: nombre de la DLT en Spring Kafka 4
+
+La guía dice que Spring Kafka usa `<tópico>.DLT` por defecto. En Spring Kafka 4.1.1 (el de Spring Boot
+4.1.1) el sufijo por defecto es **`-dlt`**: al probarlo, el mensaje venenoso fue a
+`investigadores.registrados-dlt` y la `investigadores.registrados.DLT` declarada quedó vacía. Por eso
+`ManejoErroresConfig` indica el destino explícitamente (`registro.topic() + ".DLT"`), y así el comando
+`kafka-console-consumer ... --topic investigadores.registrados.DLT` del taller funciona tal cual.
+
+### Resultados observados
+
+- Mensaje venenoso → un solo error, sin bucle de reintentos, y queda en `investigadores.registrados.DLT` con
+  las cabeceras `kafka_dlt-exception-fqcn`, `kafka_dlt-original-topic` y `kafka_dlt-original-consumer-group`.
+- Contador idempotente: con N = 3 altas, al regresar el grupo `consultas-estadisticas` al offset 0 el log
+  muestra `evento ... ya procesado, se ignora` por cada alta repetida y el total sigue exactamente en 3.
+- Para reiniciar los offsets el grupo debe estar **vacío**: si el consumidor se mató a la fuerza, hay que
+  esperar a que venza su sesión (`--describe --state` debe mostrar `Empty`); si no, el reset no se aplica.
+
+### Paso 7. Discusión: ¿qué hacemos con la DLT?
+
+1. **¿Quién debe enterarse y cómo?** El equipo dueño del servicio consumidor, con una alerta automática
+   cuando el tamaño de la DLT crece (métrica de offsets del tópico `.DLT`), visible en el tablero de
+   observabilidad de la Lección 10; no un correo por mensaje, sino una alerta agregada.
+2. **¿Cómo se reprocesa?** Con una herramienta aparte (un pequeño job o endpoint administrativo) que lea la
+   DLT y reenvíe al tópico original solo los mensajes elegidos, después de corregir la causa. Reenviar todo
+   a ciegas podría repetir el fallo o duplicar efectos.
+3. **¿Cuándo es válido descartar?** Cuando el mensaje es basura irrecuperable (como el texto que no es JSON)
+   o el hecho ya no tiene efecto; lo decide el dueño del dato, y la decisión debe quedar registrada.
+4. **¿Y si es válido pero llegó a destiempo?** Reprocesarlo puede violar el orden (por ejemplo, resucitar una
+   ficha eliminada). Hace falta que los eventos lleven versión o marca de tiempo del agregado para que el
+   consumidor descarte lo que ya quedó superado; el id de correlación de la Lección 10 ayuda a rastrearlo.
+
+### Por qué un mensaje venenoso reintentado sin fin es lo peor
+
+Reintentarlo sin fin bloquea la partición: ningún mensaje posterior se procesa, así que un solo mensaje
+detiene a todos los demás. Perderlo al menos deja avanzar al resto, y enviarlo a una DLT es lo mejor:
+avanza el resto y además el mensaje queda guardado para diagnosticarlo y reprocesarlo.
