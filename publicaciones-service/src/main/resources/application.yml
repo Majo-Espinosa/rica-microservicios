@@ -27,3 +27,17 @@ eureka:
   client:
     service-url:
       defaultZone: http://localhost:8761/eureka
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: always
+
+logging:
+  pattern:
+    # Cada linea de log lleva el servicio y el id de correlacion de la peticion
+    level: "%5p [${spring.application.name},%X{correlationId:-}]"

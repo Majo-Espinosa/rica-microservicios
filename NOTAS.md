@@ -184,3 +184,39 @@ La guía dice que Spring Kafka usa `<tópico>.DLT` por defecto. En Spring Kafka 
 Reintentarlo sin fin bloquea la partición: ningún mensaje posterior se procesa, así que un solo mensaje
 detiene a todos los demás. Perderlo al menos deja avanzar al resto, y enviarlo a una DLT es lo mejor:
 avanza el resto y además el mensaje queda guardado para diagnosticarlo y reprocesarlo.
+
+## Taller Lección 10 — Observabilidad
+
+### Resultados observados
+
+- `/actuator/health` responde `UP` en los tres servicios; investigadores-service muestra `db` (PostgreSQL),
+  publicaciones y consultas muestran `mongo`.
+- `curl -H "X-Correlation-Id: demo-001"` devuelve la misma cabecera y el log muestra `[investigadores-service,demo-001]`.
+- Saga seguida con un solo id (DELETE por el Gateway con `demo-001`):
+  - `[investigadores-service,demo-001] Saga: iniciando eliminación de mateo.diaz@...`
+  - `[publicaciones-service,demo-001] Saga: 2 publicaciones de mateo.diaz@... marcadas como huérfanas`
+  - `[investigadores-service,demo-001] Saga: publicaciones confirmó para mateo.diaz@... Eliminando investigador.`
+- `/actuator/metrics/http.server.requests` funciona sin módulo extra (COUNT, TOTAL_TIME, MAX; `?tag=status:404`).
+- Saga atascada (`demo-002`, publicaciones-service detenido): la ficha queda `EN_ELIMINACION` y el grupo
+  `publicaciones-service` muestra LAG=1 en `investigadores.en-eliminacion`; al volver, la Saga termina sola
+  y la ficha responde 404.
+
+### Brecha de trazabilidad en consultas-service
+
+consultas-service no muestra el id: `ProyeccionListener`/`ProyectorFichas` no lo leen del mensaje. Se cerraría
+con el mismo patrón del paso 5: leer `correlationId` del JSON y envolver la proyección en
+`MDC.putCloseable("correlationId", ...)`. Además, `publicaciones.registradas` no lleva el id porque
+publicaciones-service no tiene `CorrelationIdFilter`.
+
+### Paso 9. Discusión: ¿y si nunca vuelve?
+
+1. El investigador quedaría indefinidamente `EN_ELIMINACION`: no se borra ni vuelve a estar activo. Hoy nadie
+   se daría cuenta salvo mirando el lag del grupo o la consulta de fichas en eliminación.
+2. Compensación: un temporizador en investigadores-service que, pasado un plazo sin confirmación, publique
+   `investigadores.eliminacion-cancelada` (por el outbox) y regrese el estado a `ACTIVO`; publicaciones-service
+   y consultas-service lo consumirían para desmarcar las publicaciones huérfanas y reactivar la ficha. Es
+   idempotente si solo actúa cuando el estado sigue siendo `EN_ELIMINACION`.
+3. Métrica: un gauge con la cantidad de investigadores en `EN_ELIMINACION` con más de 10 minutos, más el lag
+   del grupo `publicaciones-service`; alerta si cualquiera es mayor que 0 durante 10 minutos.
+4. Con cuatro pasos más convendría orquestarla: un orquestador central hace explícitos el estado de la Saga,
+   los tiempos límite y las compensaciones, en vez de repartirlos en seis servicios que se escuchan entre sí.
